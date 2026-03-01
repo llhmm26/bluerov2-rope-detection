@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ROV Vision Dashboard</title>
+    <style>
+        body {
+            margin: 0;
+            background: #000;
+            color: white;
+            font-family: Arial;
+            overflow: hidden;
+        }
+
+        #videoFeed {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw; 
+            height: 100vh;
+            object-fit: contain;
+            background: black;
+            z-index: -1;
+        }
+
+        #ropeArrow {
+            position: absolute;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 60px;
+            color: yellow;
+            display: none;
+        }
+
+        .control-panel {
+            position: absolute;
+            top: 60px;
+            right: 20px;
+            width: 260px;
+        }
+
+        .toggle-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        input[type="checkbox"] {
+            width: 50px;
+            height: 25px;
+            appearance: none;
+            background: #444;
+            border-radius: 25px;
+            position: relative;
+            cursor: pointer;
+        }
+
+        input[type="checkbox"]:checked {
+            background: #00ff88;
+        }
+
+        input[type="checkbox"]::before {
+            content: '';
+            position: absolute;
+            width: 21px;
+            height: 21px;
+            border-radius: 50%;
+            background: white;
+            top: 2px;
+            left: 2px;
+            transition: 0.3s;
+        }
+
+        input[type="checkbox"]:checked::before {
+            left: 27px;
+        }
+
+        .hsv-panel {
+            position: absolute;
+            bottom: 30px;
+            left: 20px;
+            width: 300px;
+            background: rgba(0,0,0,0.6);
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        .hsv-panel label {
+            font-size: 13px;
+        }
+
+        .hsv-panel input[type="range"] {
+            width: 100%;
+        }
+
+        button {
+            margin-top: 10px;
+            padding: 6px 10px;
+            cursor: pointer;
+        }
+
+        .hsv-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        #hsvContent {
+            margin-top: 10px;
+        }
+
+    </style>
+</head>
+<body>
+
+<img id="videoFeed" src="/video">
+
+<div id="ropeArrow"></div>
+
+<div class="control-panel">
+    <div class="toggle-row">
+        <span>Rope Detection</span>
+        <input type="checkbox" id="toggleRope">
+    </div>
+
+    <div class="toggle-row">
+        <span>YOLO Detection</span>
+        <input type="checkbox" id="toggleYOLO">
+    </div>
+
+    <button id="enableAudio">Enable Audio</button>
+</div>
+
+<div class="hsv-panel" id="hsvPanel">
+    <div class="hsv-header"> 
+        <h3>HSV Controls</h3>
+        <span id="hsvToggle" style="cursor: pointer;">^</span>
+    </div>
+    
+    <div id="hsvContent">
+        <label>H Min</label>
+        <input type="range" min="0" max="179" id="hmin" value="20">
+
+        <label>H Max</label>
+        <input type="range" min="0" max="179" id="hmax" value="35">
+
+        <label>S Min</label>
+        <input type="range" min="0" max="255" id="smin" value="80">
+
+        <label>S Max</label>
+        <input type="range" min="0" max="255" id="smax" value="255">
+
+        <label>V Min</label>
+        <input type="range" min="0" max="255" id="vmin" value="80">
+
+        <label>V Max</label>
+        <input type="range" min="0" max="255" id="vmax" value="255"> 
+
+        <button id="autoCalibrate">Auto Calibrate (Click Rope)</button>
+        <button id="resetHSV">Reset to Default</button>
+    </div>
+</div>
+
+<script>
+console.log("Dashboard Loaded");
+
+const synth = window.speechSynthesis;
+let audioUnlocked = false;
+let ropeActive = false;
+let lastPosition = null;
+
+const ropeToggle = document.getElementById("toggleRope");
+const yoloToggle = document.getElementById("toggleYOLO");
+const video = document.getElementById("videoFeed");
+
+// ---------------- AUDIO ----------------
+document.getElementById("enableAudio").addEventListener("click", () => {
+    audioUnlocked = true;
+    const utter = new SpeechSynthesisUtterance("Audio enabled.");
+    synth.speak(utter);
+});
+
+function speak(text){
+    if (!audioUnlocked) return;
+    if (synth.speaking) return;
+    const utter = new SpeechSynthesisUtterance(text);
+    synth.speak(utter);
+}
+
+// ---------------- TOGGLES ----------------
+ropeToggle.addEventListener("change", async () => {
+    await fetch("/toggle_rope", { method: "POST" });
+});
+
+yoloToggle.addEventListener("change", async () => {
+    await fetch("/toggle_yolo", { method: "POST" });
+});
+
+// ---------------- HSV SLIDERS ----------------
+const sliders = ["hmin","hmax","smin","smax","vmin","vmax"];
+
+sliders.forEach(id => {
+    document.getElementById(id).addEventListener("input", updateHSV);
+});
+
+async function updateHSV(){
+    await fetch("/update_hsv", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+            hmin: hmin.value,
+            hmax: hmax.value,
+            smin: smin.value,
+            smax: smax.value,
+            vmin: vmin.value,
+            vmax: vmax.value
+        })
+    });
+}
+
+// ---------------- AUTO CALIBRATE ----------------
+video.addEventListener("click", async (event) => {
+
+    const rect = video.getBoundingClientRect();
+
+    const scaleX = video.naturalWidth / rect.width;
+    const scaleY = video.naturalHeight / rect.height;
+
+    const x = Math.floor((event.clientX - rect.left) * scaleX);
+    const y = Math.floor((event.clientY - rect.top) * scaleY);
+
+    const res = await fetch ("/sample_pixel", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({x:x, y:y})
+    });
+
+    //AUTO-UPDATE SLIDERS
+    document.getElementById("hmin").value = data.hmin;
+    document.getElementById("hmax").value = data.hmax;
+    document.getElementById("smin").value = data.smin;
+    document.getElementById("smax").value = data.smax;
+    document.getElementById("vmin").value = data.vmin;
+    document.getElementById("vmax").value = data.vmax;
+
+});
+
+// ---------------- STATUS POLLING ----------------
+async function pollStatus(){
+    const res = await fetch("/status");
+    const data = await res.json();
+    const summary = data.summary;
+
+    const arrow = document.getElementById("ropeArrow");
+
+    if(summary.rope_detected){
+        arrow.style.display = "block";
+
+        let direction = "";
+
+        if(summary.rope_position === "left") {
+            arrow.innerText = "⬅";
+            direction = "left";
+        }
+        else if(summary.rope_position === "right") {
+            arrow.innerText = "➡";
+            direction = "right";
+        }
+        else{
+            arrow.innerText = "⬆";
+            direction = "ahead";
+        }
+
+        if(summary.rope_position !== lastPosition){
+            speak("Rope detected on the "+ direction);
+            lastPosition = summary.rope_position;
+        }
+        ropeActive = true;
+
+    } else {
+        arrow.style.display = "none";
+        ropeActive = false;
+        lastPosition = null // Reset when rope disappears
+    }
+}
+
+setInterval(pollStatus, 1500);
+
+document.getElementById("resetHSV").addEventListener("click", async () => {
+
+    const res = await fetch("/reset_hsv", {method: "POST"});
+    const data = await res.json();
+
+    document.getElementById("hmin").value = data.hmin;
+    document.getElementById("hmax").value = data.hmax;
+    document.getElementById("smin").value = data.smin;
+    document.getElementById("smax").value = data.smax;
+    document.getElementById("vmin").value = data.vmin;
+    document.getElementById("vmax").value = data.vmax;
+
+});
+
+// ----- HSV COLLAPSE (Smooth Animation)-----
+const hsvToggle = document.getElementById("hsvToggle");
+const hsvContent = document.getElementById("hsvContent");
+
+// Initial state
+hsvContent.style.maxHeight = "0px";
+hsvContent.style.overflow = "hidden";
+hsvContent.style.transition = "max-height 0.3s ease";
+
+hsvToggle.addEventListener("click", () => {
+    if(hsvContent.style.maxHeight === "0px"){
+        hsvContent.style.maxHeight = "500px";  // enough height to show content
+        hsvToggle.innerText = "v";
+    } else {
+        hsvContent.style.maxHeight = "0px";
+        hsvToggle.innerText = "^";
+    }
+});
+</script>
+
+</body>
+</html>
