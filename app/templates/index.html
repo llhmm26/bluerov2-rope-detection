@@ -119,11 +119,7 @@
 <div id="ropeArrow"></div>
 
 <div class="control-panel">
-    <div class="toggle-row">
-        <span>Rope Detection</span>
-        <input type="checkbox" id="toggleRope">
-    </div>
-
+    
     <div class="toggle-row">
         <span>YOLO Detection</span>
         <input type="checkbox" id="toggleYOLO">
@@ -170,7 +166,6 @@ let audioUnlocked = false;
 let ropeActive = false;
 let lastPosition = null;
 
-const ropeToggle = document.getElementById("toggleRope");
 const yoloToggle = document.getElementById("toggleYOLO");
 const video = document.getElementById("videoFeed");
 
@@ -187,11 +182,6 @@ function speak(text){
     const utter = new SpeechSynthesisUtterance(text);
     synth.speak(utter);
 }
-
-// ---------------- TOGGLES ----------------
-ropeToggle.addEventListener("change", async () => {
-    await fetch("/toggle_rope", { method: "POST" });
-});
 
 yoloToggle.addEventListener("change", async () => {
     await fetch("/toggle_yolo", { method: "POST" });
@@ -236,6 +226,8 @@ video.addEventListener("click", async (event) => {
         body: JSON.stringify({x:x, y:y})
     });
 
+    const data = await res.json();
+    
     //AUTO-UPDATE SLIDERS
     document.getElementById("hmin").value = data.hmin;
     document.getElementById("hmax").value = data.hmax;
@@ -247,6 +239,7 @@ video.addEventListener("click", async (event) => {
 });
 
 // ---------------- STATUS POLLING ----------------
+
 async function pollStatus(){
     const res = await fetch("/status");
     const data = await res.json();
@@ -272,7 +265,7 @@ async function pollStatus(){
             direction = "ahead";
         }
 
-        if(summary.rope_position !== lastPosition){
+        if(summary.rope_position && summary.rope_position !== lastPosition){
             speak("Rope detected on the "+ direction);
             lastPosition = summary.rope_position;
         }

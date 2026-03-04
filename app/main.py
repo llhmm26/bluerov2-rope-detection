@@ -40,6 +40,9 @@ MODEL_PATH = os.getenv(
 FRAME_SKIP = 5     # inference frequency
 HTTP_PORT = 8080
 
+# ===== REFINEMENT SWITCH =====
+USE_REFINEMENT = False #True = YOLO +HSV+Hough | False = YOLO only
+
 WINDOW_NAME = "BlueOS Vision Dashboard"
 
 rope_enabled = False
@@ -123,6 +126,7 @@ def video_loop():
     
     # ===== RUNTIME LOG =====
     print("=" * 60)
+    print(f"[MODE] Refinement Enabled: {USE_REFINEMENT}")
     print("[RUNTIME] Components initialized")
     print(f"[RUNTIME] YOLO loaded      : {yolo is not None}")
     print(f"[RUNTIME] Rope detector    : {rope_detector is not None}")
@@ -158,70 +162,78 @@ def video_loop():
         if frame_idx % FRAME_SKIP == 0:
 
             # ================= STEP A — YOLO =================
-            yolo_boxes = []
+            raw_detections = yolo.detect(frame)
 
-            if yolo_enabled:
-                raw_detections = yolo.detect(frame)
+            # Filter detections (rope + obstacles)
+            filtered = filter_detections(raw_detections)
 
-                for det in raw_detections:
-                    x1, y1, x2, y2 = det["bbox"]
-                    cls_name = det["class_name"]
-                    conf = det["confidence"]
-
-                    yolo_boxes.append({
-                        "class_name": cls_name,
-                        "confidence": conf,
-                        "bbox": (x1, y1, x2, y2),
-                    })
-            else:
-                raw_detections = []
-
-            # ================= STEP B — ROPE =================
             rope_detected = False
-            rope_info = None
+            rope_position = None
 
-            if rope_enabled:
-                try:
-                    rope_detected, rope_info, rope_overlay = rope_detector.detect(
-                        frame,
+            # ================= STEP B — ROI-BASED ROPE REFINEMENT =================
+            for rope in filtered["ropes"]:
+
+                x1, y1, x2, y2 = rope["bbox"]
+
+                center_x = (x1 + x2) // 2
+
+                rope_position = (
+                    "left" if center_x < frame.shape[1] * 0.33 else
+                    "right" if center_x > frame.shape[1] * 0.66 else
+                    "center"
+                )
+
+                # ================= REFINEMENT CONTROL =================
+                if USE_REFINEMENT:
+
+                    roi = frame[y1:y2, x1:x2]
+
+                    found, lines = rope_detector.detect(
+                        roi,
                         hsv_lower,
                         hsv_upper
                     )
 
-                    if rope_detected:
-                        frame = rope_overlay # apply highlighted rope lines
-                except Exception as e:
-                    print("[ROPE] detection error:", e)
+                    if found:
+                        rope_detected = True
 
-            # ================= STEP C — FILTERING =================
-            filtered = filter_detections(yolo_boxes)
+                        # Draw refined red lines
+                        for (rx1, ry1, rx2, ry2) in lines:
+                            cv2.line(
+                                frame,
+                                (x1 + rx1, y1 + ry1),
+                                (x1 + rx2, y1 + ry2),
+                                (0, 0, 255),
+                                3
+                            )
+                    else:
+                        rope_detected = False
 
-            # ================= STEP D — SUMMARY =================
-            summary = summarize_scene(filtered, rope_detected)
+                else:
+                    # YOLO only mode
+                    rope_detected = True
 
-            # ---- Inject rope spatial info ----
-            if rope_detected and rope_info:
-                summary["rope_position"] = rope_info.get("position")
-            else:
-                summary["rope_position"] = None
+                    # Draw vertical red line based on YOLO bounding box
+                    center_x = (x1 + x2) // 2
 
-            # ================= PERFORMANCE GUARD =================
-            now = time.time()
+                    cv2.line(
+                        frame,
+                        (center_x, y1),
+                        (center_x, y2),
+                        (0, 0, 255),   # Red
+                        3
+                    )
 
-            summary_changed = (summary != last_summary)
-        
-            # ================= STEP F — SAVE STATE =================
-            latest_detections = {
-                "obstacles": filtered["obstacles"],
-                "ropes": filtered["ropes"],
+            # ================= STEP C — DRAW YOLO BOXES =================
+            draw_yolo_boxes(frame, filtered["obstacles"])
+
+            # ================= STEP D — UPDATE SUMMARY =================
+            latest_summary = {
                 "rope_detected": rope_detected,
+                "rope_position": rope_position
             }
-            latest_summary = summary
 
-            # ================= STEP 6 — VISUAL OVERLAY =================
-            if yolo_enabled:
-                draw_yolo_boxes(frame, latest_detections.get("obstacles", []))
-
+            latest_detections = filtered
         with frame_lock:
             latest_frame = frame.copy()
 
@@ -270,13 +282,6 @@ def status():
             "ropes": len(latest_detections.get("ropes", [])),
         }
     })
-
-@app.route("/toggle_rope", methods=["POST"])
-def toggle_rope():
-    global rope_enabled
-    rope_enabled = not rope_enabled
-    print("Rope enabled:", rope_enabled)
-    return jsonify({"rope_enabled": rope_enabled})
 
 
 @app.route("/toggle_yolo", methods=["POST"])
