@@ -34,7 +34,7 @@ def filter_detections(detections: List[Dict]):
 
     return {
         "obstacles": obstacles,
-        "ropes": ropes,
+        "rope": ropes,
         "ignored": ignored,
     }
 
@@ -42,7 +42,7 @@ def filter_detections(detections: List[Dict]):
 def summarize_scene(filtered):
 
     return {
-        "rope_detected": len(filtered.get("ropes", [])) > 0,
+        "rope_detected": len(filtered.get("rope", [])) > 0,
         "obstacle_count": len(filtered.get("obstacles", [])),
-        "rope_count": len(filtered.get("ropes", [])),
+        "rope_count": len(filtered.get("rope", [])),
     }

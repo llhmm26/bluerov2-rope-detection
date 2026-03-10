@@ -34,7 +34,7 @@ RTSP_URL = os.getenv(
 
 MODEL_PATH = os.getenv(
     "YOLO_MODEL",
-    r"C:\Users\milha\underwaterMonitoring_fyp\vision-assist-extension\app\models\best.pt"
+    r"C:\Users\milha\underwaterMonitoring_fyp\vision-assist-extension\app\models\initial-rope-yolo.pt"
 )
 
 FRAME_SKIP = 5     # inference frequency
@@ -123,6 +123,9 @@ def video_loop():
     
     yolo = YOLODetector(MODEL_PATH)
     rope_detector = RopeDetector()
+
+    # DEBUG: print YOLO class names
+    print("YOLO classes:", yolo.model.names)
     
     # ===== RUNTIME LOG =====
     print("=" * 60)
@@ -171,7 +174,7 @@ def video_loop():
             rope_position = None
 
             # ================= STEP B — ROI-BASED ROPE REFINEMENT =================
-            for rope in filtered["ropes"]:
+            for rope in filtered["rope"]:
 
                 x1, y1, x2, y2 = rope["bbox"]
 
@@ -237,8 +240,14 @@ def video_loop():
         with frame_lock:
             latest_frame = frame.copy()
 
+    #debug to see whether rope is detected
+    print("Rope detections:", filtered["ropes"])
+
+    print(filtered)
+
     cap.release()
     print("[VIDEO] Stopped")
+
 
 # ---------------- HTTP SERVER ----------------
 

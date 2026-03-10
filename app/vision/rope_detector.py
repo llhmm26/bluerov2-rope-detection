@@ -52,17 +52,19 @@ class RopeDetector:
             self.detection_counter = 0
             return False, []
 
-        vertical_lines = []
+        candidate_lines = []
 
         for l in lines:
             x1, y1, x2, y2 = l[0]
+
             dx = abs(x2 - x1)
             dy = abs(y2 - y1)
 
-            if dy > dx * 2:
-                vertical_lines.append((x1, y1, x2, y2))
+            # Accept vertical OR horizontal structures
+            if dy > dx * 2 or dx > dy * 2:
+                candidate_lines.append((x1, y1, x2, y2))
 
-        if len(vertical_lines) < self.min_lines:
+        if len(candidate_lines) < self.min_lines:
             self.detection_counter = 0
             return False, []
 
@@ -71,4 +73,30 @@ class RopeDetector:
         if self.detection_counter < self.required_stable_frames:
             return False, []
 
-        return True, vertical_lines
+        # ---- Average the detected lines to produce one stable line ----
+
+        xs = []
+        ys = []
+
+        for (x1, y1, x2, y2) in candidate_lines:
+            xs.extend([x1, x2])
+            ys.extend([y1, y2])
+
+        x_mean = int(np.mean(xs))
+        y_mean = int(np.mean(ys))
+
+        # Determine orientation
+        dx_total = sum(abs(x2 - x1) for (x1, y1, x2, y2) in candidate_lines)
+        dy_total = sum(abs(y2 - y1) for (x1, y1, x2, y2) in candidate_lines)
+
+        h, w = roi.shape[:2]
+
+        if dy_total > dx_total:
+            # Vertical rope
+            line = (x_mean, 0, x_mean, h)
+        else:
+            # Horizontal rope
+            line = (0, y_mean, w, y_mean)
+
+        return True, [line]
+        # return True, candidate_lines
