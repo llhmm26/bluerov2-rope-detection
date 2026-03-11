@@ -1,7 +1,6 @@
 import cv2
 import numpy as np
 
-
 class RopeDetector:
     def __init__(self):
         self.min_pixel_ratio = 0.003
@@ -53,7 +52,7 @@ class RopeDetector:
             return False, None, overlay
 
         # ---------------- ORIENTATION FILTER ----------------
-        vertical_lines = [] #changed to 'candidate_lines' if using both vertical & horizontal
+        candidate_lines = []
 
         for l in lines:
             x1, y1, x2, y2 = l[0]
@@ -61,12 +60,12 @@ class RopeDetector:
             dx = abs(x2 - x1)
             dy = abs(y2 - y1)
 
-            #dx > dy * 2 : for horizontal rope
-            # Accept vertical rope
-            if dy > dx * 2:
-                vertical_lines.append((x1, y1, x2, y2))
+            #
+            # Accept vertical OR horizontal rope
+            if dy > dx * 2 or dx > dy * 2:
+                candidate_lines.append((x1, y1, x2, y2))
 
-        if len(vertical_lines) < self.min_lines:
+        if len(candidate_lines) < self.min_lines:
             self.detection_counter = 0
             return False, None, overlay
 
@@ -76,40 +75,39 @@ class RopeDetector:
         if self.detection_counter < self.required_stable_frames:
             return False, None, overlay
 
-        #for both horizontal & vertical rope orientation
         # ---------------- CENTERLINE AVERAGING ----------------
+        xs = []
+        ys = []
+
+        for (x1, y1, x2, y2) in candidate_lines:
+            xs.extend([x1, x2])
+            ys.extend([y1, y2])
+
+        x_mean = int(np.mean(xs))
+        y_mean = int(np.mean(ys))
+
+        dx_total = sum(abs(x2 - x1) for (x1, y1, x2, y2) in candidate_lines)
+        dy_total = sum(abs(y2 - y1) for (x1, y1, x2, y2) in candidate_lines)
+
+        # Determine rope orientation
+        if dy_total > dx_total:
+            orientation = "vertical"
+            line = (x_mean, 0, x_mean, h)
+        else:
+            orientation = "horizontal"
+            line = (0, y_mean, w, y_mean)
+
+         # ---------------- DRAW FINAL STABLE LINE ----------------
         # xs = []
-        # ys = []
-
-        # for (x1, y1, x2, y2) in candidate_lines:
-        #     xs.extend([x1, x2])
-        #     ys.extend([y1, y2])
-
-        # x_mean = int(np.mean(xs))
-        # y_mean = int(np.mean(ys))
-
-        # dx_total = sum(abs(x2 - x1) for (x1, y1, x2, y2) in candidate_lines)
-        # dy_total = sum(abs(y2 - y1) for (x1, y1, x2, y2) in candidate_lines)
-
-        # # Determine rope orientation
-        # if dy_total > dx_total:
-        #     orientation = "vertical"
-            # line = (x_mean, 0, x_mean, h)
-        # else:
-        #     orientation = "horizontal"
-        #     line = (0, y_mean, w, y_mean)
-
-        # ---------------- DRAW FINAL STABLE LINE ----------------
-        xs = [] #discard if using both vertical & horizontal rope orientation
-        for (x1,y1,x2,y2) in vertical_lines:
-            xs.extend([x1,x2])
+        # for (x1,y1,x2,y2) in vertical_lines:
+        #     xs.extend([x1,x2])
 
             if draw:
                 # x1, y1, x2, y2 = line
                 cv2.line(overlay, (x1, y1), (x2, y2), (0, 0, 255), 3)
 
         # ---------------- POSITION ESTIMATION ----------------
-        x_mean = int(np.mean(xs)) #discard if using both vertical & horizontal rope orientation
+        # x_mean = int(np.mean(xs))
         rope_side = (
             "left" if x_mean < w * 0.33 else
             "right" if x_mean > w * 0.66 else
@@ -118,11 +116,12 @@ class RopeDetector:
 
         rope_info = {
             "x_center": x_mean,
-            # "y_center": y_mean, # if both vertical & horizontal rope orientation
-            # "orientation": orientation, # if both vertical & horizontal rope orientation
+            "y_center": y_mean,
+            "orientation": orientation,
             "position": rope_side,
-            "line_count": len(vertical_lines),
+            "line_count": len(candidate_lines),
             "pixel_ratio": round(pixel_ratio, 4)
         }
 
         return True, rope_info, overlay
+
