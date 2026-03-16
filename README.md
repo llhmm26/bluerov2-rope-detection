@@ -96,3 +96,18 @@ https://blueos.cloud/docs/stable/development/extensions/
 https://blueos.cloud/docs/stable/development/overview/#docker
 
 For stable performance, a higher-performance onboard computer is recommended instead of Raspberry Pi.
+
+Author
+
+Muhammad Ilham Bin Mohammad Faisal
+Universiti Teknologi PETRONAS
+Final Year Project
+
+Supervisor
+
+Dr. Mohamed Nordin Bin Zakaria
+Universiti Teknologi PETRONAS
+
+License
+
+This repository is for academic and research purposes only.
