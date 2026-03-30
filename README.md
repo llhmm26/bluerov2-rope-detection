@@ -36,7 +36,7 @@ Required libraries:
 
 Install dependencies:
 
-```bash
+bash
 pip install -r requirements.txt
 
 ** 4.0 Model Training**
